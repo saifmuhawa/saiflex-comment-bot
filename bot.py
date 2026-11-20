@@ -250,12 +250,26 @@ def _loop():
         time.sleep(POLL_SECONDS)
 
 
-if POLL_SECONDS > 0 and os.environ.get("DISABLE_LOOP") != "1":
+_loop_started = False
+
+
+def start_loop():
+    """Start the polling thread once, inside the process that serves requests."""
+    global _loop_started
+    if _loop_started or POLL_SECONDS <= 0 or os.environ.get("DISABLE_LOOP") == "1":
+        return
+    _loop_started = True
     threading.Thread(target=_loop, daemon=True).start()
+    log.info("polling loop started (every %ss)", POLL_SECONDS)
 
 
 # ---------------------------------------------------------------- web
 app = Flask(__name__)
+
+
+@app.before_request
+def _ensure_loop():
+    start_loop()
 
 
 @app.get("/")
