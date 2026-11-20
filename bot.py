@@ -247,7 +247,20 @@ def _loop():
         except Exception as e:
             log.error("auto run failed: %s", e)
             _state["last_result"] = {"ok": False, "error": str(e)[:500]}
+        _self_ping()
         time.sleep(POLL_SECONDS)
+
+
+def _self_ping():
+    """Render's free plan sleeps after 15 idle minutes; a request to our own
+    public URL counts as traffic and keeps the bot awake."""
+    url = os.environ.get("RENDER_EXTERNAL_URL")
+    if not url:
+        return
+    try:
+        requests.get(url, timeout=30)
+    except Exception as e:
+        log.warning("self ping failed: %s", e)
 
 
 _loop_started = False
