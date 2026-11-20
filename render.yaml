@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: saiflex-sahra-bot
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn bot:app --workers 1 --timeout 120
+    envVars:
+      - key: IG_ACCESS_TOKEN
+        sync: false
+      - key: RUN_KEY
+        generateValue: true
+      - key: IG_USER_ID
+        value: "17841424500830128"
+      - key: KEYWORDS
+        value: "The Hunger Games,هنقر قيم,هنقر قيمز,هنجر جيمز"
+      - key: LINK
+        value: "https://cinemana.site/search?q=the+hunger+games"
