@@ -190,7 +190,11 @@ def run_once() -> dict:
     if not _state["token"]:
         return {"ok": False, "error": "IG_ACCESS_TOKEN is not set"}
     with _lock:
-        me = get_me()
+        try:
+            me = get_me()
+        except Exception as e:
+            _state["last_result"] = {"ok": False, "error": str(e)[:500]}
+            raise
         refresh_token_if_needed()
         since = datetime.now(timezone.utc) - timedelta(days=MEDIA_DAYS)
         reply_window = datetime.now(timezone.utc) - timedelta(days=7)  # Meta: private reply within 7 days
@@ -225,8 +229,29 @@ def run_once() -> dict:
 
         _state["sent_total"] += sent
         _state["last_run"] = datetime.now(timezone.utc).isoformat()
-        return {"ok": not errors, "media": len(media_list), "comments_checked": checked,
-                "sent": sent, "errors": errors[:5]}
+        result = {"ok": not errors, "media": len(media_list), "comments_checked": checked,
+                  "sent": sent, "errors": errors[:5]}
+        _state["last_result"] = result
+        return result
+
+
+# ---------------------------------------------------------------- background loop
+POLL_SECONDS = int(os.environ.get("POLL_SECONDS", "300"))  # check comments every 5 minutes
+
+
+def _loop():
+    time.sleep(10)
+    while True:
+        try:
+            log.info("auto run: %s", run_once())
+        except Exception as e:
+            log.error("auto run failed: %s", e)
+            _state["last_result"] = {"ok": False, "error": str(e)[:500]}
+        time.sleep(POLL_SECONDS)
+
+
+if POLL_SECONDS > 0 and os.environ.get("DISABLE_LOOP") != "1":
+    threading.Thread(target=_loop, daemon=True).start()
 
 
 # ---------------------------------------------------------------- web
@@ -235,8 +260,10 @@ app = Flask(__name__)
 
 @app.get("/")
 def health():
+    """Public status page; a free uptime pinger hitting this keeps the service awake."""
     return jsonify(status="alive", keywords=KEYWORDS, last_run=_state["last_run"],
-                   sent_total=_state["sent_total"])
+                   last_result=_state.get("last_result"), sent_total=_state["sent_total"],
+                   account=(_state["me"] or {}).get("username"))
 
 
 @app.get("/run")
