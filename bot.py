@@ -35,14 +35,17 @@ API = f"{API_HOSTS[0]}/{API_VERSION}"
 IG_USER_ID = os.environ.get("IG_USER_ID", "17841424500830128")  # @saiflex.u
 TOKEN = os.environ.get("IG_ACCESS_TOKEN", "").strip()
 RUN_KEY = os.environ.get("RUN_KEY", "")                     # protects /run
-KEYWORDS = [k.strip() for k in os.environ.get(
-    "KEYWORDS", "The Hunger Games,هنقر قيم,هنقر قيمز,هنجر جيمز"
-).split(",") if k.strip()]
-LINK = os.environ.get("LINK", "https://cinemana.site/search?q=the+hunger+games")
+# One rule per video:  keyword, keyword, ... => link   (rules separated by ";" or new lines).
+# Set RULES in Render > Environment to change them without touching the code.
+DEFAULT_RULES = """
+hunger games, هنقر قيم, هنجر جيمز, هنقر جيمز, هنجر قيم => https://cinemana.site/search?q=the+hunger+games
+avengers, افنجر, افينجر, اڤنجر => https://cinemana.site/search?q=Avengers
+"""
+RULES_TEXT = os.environ.get("RULES", "").strip() or DEFAULT_RULES
 DM_TEXT = os.environ.get(
     "DM_TEXT",
     "هلا! هاد الرابط اللي وعدتك فيه 🎬\n{link}\n"
-    "وإنت مين شخصيتك المفضلة بهنقر قيمز؟",
+    "مشاهدة ممتعة، واحكيلي شو رأيك بعد ما تحضر 🍿",
 )
 PUBLIC_REPLY = os.environ.get("PUBLIC_REPLY", "بعتلك الرابط على الخاص 📩")
 MEDIA_DAYS = int(os.environ.get("MEDIA_DAYS", "14"))       # how far back to look at posts
@@ -68,12 +71,33 @@ def normalize(text: str) -> str:
     return re.sub(r"\s+", "", t)
 
 
-_KEYS = [normalize(k) for k in KEYWORDS]
+def parse_rules(text: str):
+    rules = []
+    for line in re.split(r"[;\n]+", text):
+        if "=>" not in line:
+            continue
+        keys, link = line.split("=>", 1)
+        keys = [normalize(k) for k in keys.split(",") if k.strip()]
+        if keys and link.strip():
+            rules.append((keys, link.strip()))
+    return rules
+
+
+RULES = parse_rules(RULES_TEXT)
+KEYWORDS = [k for keys, _ in RULES for k in keys]  # shown on the status page
+
+
+def link_for(text: str):
+    """Return the link of the first rule whose keyword appears in the comment, else None."""
+    n = normalize(text)
+    for keys, link in RULES:
+        if any(k in n for k in keys):
+            return link
+    return None
 
 
 def matches(text: str) -> bool:
-    n = normalize(text)
-    return any(k and k in n for k in _KEYS)
+    return link_for(text) is not None
 
 
 def api(method: str, path: str, **params):
@@ -172,7 +196,7 @@ def already_handled(comment: dict, me: dict) -> bool:
     return False
 
 
-def handle_comment(comment: dict, me: dict) -> bool:
+def handle_comment(comment: dict, me: dict, link: str) -> bool:
     cid = comment["id"]
     # 1) public reply first: it is the "done" marker even if the bot restarts
     api("POST", f"{cid}/replies", message=PUBLIC_REPLY)
@@ -180,7 +204,7 @@ def handle_comment(comment: dict, me: dict) -> bool:
     api(
         "POST",
         f"{me['id']}/messages",
-        json={"recipient": {"comment_id": cid}, "message": {"text": DM_TEXT.format(link=LINK)}},
+        json={"recipient": {"comment_id": cid}, "message": {"text": DM_TEXT.format(link=link)}},
     )
     log.info("sent link to @%s (comment %s)", comment.get("username"), cid)
     return True
@@ -213,14 +237,15 @@ def run_once() -> dict:
                 author_id = str((c.get("from") or {}).get("id", ""))
                 if author_id == me["id"] or (c.get("username") or "").lower() == me["username"].lower():
                     continue
-                if not matches(c.get("text", "")):
+                link = link_for(c.get("text", ""))
+                if not link:
                     continue
                 if datetime.fromisoformat(c["timestamp"].replace("+0000", "+00:00")) < reply_window:
                     continue
                 if already_handled(c, me):
                     continue
                 try:
-                    handle_comment(c, me)
+                    handle_comment(c, me, link)
                     sent += 1
                     time.sleep(2)  # be gentle with rate limits
                 except Exception as e:
