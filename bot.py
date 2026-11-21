@@ -44,8 +44,9 @@ avengers, افنجر, افينجر, اڤنجر => https://cinemana.site/search?q
 RULES_TEXT = os.environ.get("RULES", "").strip() or DEFAULT_RULES
 DM_TEXT = os.environ.get(
     "DM_TEXT",
-    "هلا! هاد الرابط اللي وعدتك فيه 🎬\n{link}\n"
-    "مشاهدة ممتعة، واحكيلي شو رأيك بعد ما تحضر 🍿",
+    "هلا! هاد الرابط اللي وعدتك فيه 🎬\n{link}\n\n"
+    "تابع @saiflex.u عشان ما تفوتك الأفلام الجاية 🍿\n"
+    "مشاهدة ممتعة!",
 )
 PUBLIC_REPLY = os.environ.get("PUBLIC_REPLY", "بعتلك الرابط على الخاص 📩")
 MEDIA_DAYS = int(os.environ.get("MEDIA_DAYS", "14"))       # how far back to look at posts
